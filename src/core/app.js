@@ -262,30 +262,24 @@ export class App {
       this.hud.toast('seed some stars first');
       return;
     }
+    const payload = url.slice(url.indexOf('#'));
     const done = () => this.hud.toast('universe link copied');
-    const fail = () => this.hud.toast('could not copy — see address bar');
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(url).then(done, () => this._fallbackCopy(url) ? done() : fail());
+      navigator.clipboard.writeText(url).then(done, () => this._shareViaAddressBar(payload));
     } else {
-      this._fallbackCopy(url) ? done() : fail();
+      this._shareViaAddressBar(payload);
     }
   }
 
-  /** Legacy clipboard fallback; returns success. */
-  _fallbackCopy(text) {
+  /**
+   * Clipboard-unavailable fallback: put the share hash in the address bar so
+   * the visitor can copy the URL from there.
+   */
+  _shareViaAddressBar(payload) {
     try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand('copy');
-      ta.remove();
-      return ok;
-    } catch {
-      return false;
-    }
+      history.replaceState(null, '', location.pathname + location.search + payload);
+    } catch { /* ignore */ }
+    this.hud.toast('could not copy — link is in the address bar');
   }
 
   _onKeyDown(e) {

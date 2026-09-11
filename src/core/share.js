@@ -20,20 +20,25 @@ const I16_MAX = 32764;
 
 function clampInt(value, min, max) {
   const n = Math.round(Number(value) || 0);
-  return n < min ? min : n > max ? max : n;
+  return Math.min(max, Math.max(min, n));
 }
 
 function base64UrlEncode(bytes) {
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  for (const byte of bytes) binary += String.fromCodePoint(byte);
+  // btoa only ever appends '=' padding at the end, so stripping every '='
+  // anywhere is equivalent to trimming trailing padding.
+  return btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 
 function base64UrlDecode(str) {
-  const padded = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = str.replaceAll('-', '+').replaceAll('_', '/');
   const binary = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
   const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  let i = 0;
+  for (const ch of binary) {
+    bytes[i++] = ch.codePointAt(0) ?? 0;
+  }
   return bytes;
 }
 

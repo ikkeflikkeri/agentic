@@ -98,7 +98,8 @@ export class Cosmos {
       born: this._lastElapsed,
       count,
       silent: opts.cascade === false,
-      due: this._lastElapsed + SUPERNOVA_AGE + Math.random() * 4.0
+      // Pseudorandom jitter is fine here: it staggers visual timing only.
+      due: this._lastElapsed + SUPERNOVA_AGE + Math.random() * 4.0 // NOSONAR: non-security visual timing
     });
     if (this._cells.length > MAX_CELLS) this._cells.shift();
 
@@ -168,18 +169,19 @@ export class Cosmos {
       // Seeds restored from a shared URL stay quiet: they replay the shared
       // layout without instantly exploding.
       const mayExplode = !this.reducedMotion && !cell.silent;
-      if (mayExplode && Math.random() < SUPERNOVA_CHANCE) {
-        const color = this._burstColor.setHSL(0.09 + Math.random() * 0.04, 0.85, 0.7);
+      // Pseudorandomness below only varies visuals; no security use.
+      if (mayExplode && Math.random() < SUPERNOVA_CHANCE) { // NOSONAR: cosmetic randomness
+        const color = this._burstColor.setHSL(0.09 + Math.random() * 0.04, 0.85, 0.7); // NOSONAR: cosmetic
         this.bursts.spawn(cell.pos, color);
         this.galaxy.seedBurst(cell.pos);
 
         // Second generation: smaller, slightly offset, not share-logged.
         const offset = new THREE.Vector3(
-          (Math.random() - 0.5) * 14,
+          (Math.random() - 0.5) * 14, // NOSONAR: cosmetic
           0,
-          (Math.random() - 0.5) * 14
+          (Math.random() - 0.5) * 14 // NOSONAR: cosmetic
         ).add(cell.pos);
-        this.seedAt(offset, Math.min(180, Math.max(60, cell.count * 0.3 | 0)), { share: false });
+        this.seedAt(offset, Math.min(180, Math.max(60, Math.trunc(cell.count * 0.3))), { share: false });
         this._energy = Math.min(1.0, this._energy + 0.35);
         this.onSupernova?.(cell.pos);
       }
