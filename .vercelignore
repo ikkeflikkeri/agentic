@@ -1,0 +1,10 @@
+# Keep local/CI metadata out of the static deployment.
+.git
+.github
+.vercel
+node_modules
+ci-artifacts
+scripts
+*.md
+.DS_Store
+Thumbs.db

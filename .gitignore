@@ -2,8 +2,9 @@
 node_modules/
 ci-artifacts/
 
-# Vercel local link state
+# Vercel local link state and env
 .vercel/
+.env*
 
 # OS noise
 .DS_Store
