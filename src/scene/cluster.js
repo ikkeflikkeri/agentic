@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clusterVertexShader, clusterFragmentShader } from '../shaders/cluster.js';
 
-const LIFE = 12.0;
+export const CLUSTER_LIFE = 12.0;
 
 /**
  * Pooled stars that are literally seeded by the visitor: every pointer burst
@@ -46,7 +46,7 @@ export class ClusterField {
       uTime: { value: 0 },
       uSize: { value: 1.25 },
       uPixelRatio: { value: 1 },
-      uLife: { value: LIFE }
+      uLife: { value: CLUSTER_LIFE }
     };
 
     this.material = new THREE.ShaderMaterial({
