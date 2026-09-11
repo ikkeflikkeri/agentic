@@ -3,9 +3,16 @@ import { Galaxy } from './galaxy.js';
 import { Starfield } from './starfield.js';
 import { Nebula } from './nebula.js';
 import { BurstField } from './burst.js';
-import { ClusterField } from './cluster.js';
+import { ClusterField, CLUSTER_LIFE } from './cluster.js';
 
 const GALACTIC_PLANE = new THREE.Vector3(0, 1, 0);
+
+// Lifecycle tuning: a mature cluster may collapse into a supernova that
+// re-seeds a smaller generation nearby, so the universe keeps itself alive.
+const SUPERNOVA_AGE = CLUSTER_LIFE * 0.8;
+const SUPERNOVA_CHANCE = 0.6;
+const MAX_CELLS = 48;
+const MAX_LOGGED_SEEDS = 64;
 
 /**
  * Composes the whole universe and owns the interaction entry point.
@@ -44,6 +51,13 @@ export class Cosmos {
     this._lastSeed = 0;
     this._lastBurst = -10;
     this._lastElapsed = 0;
+
+    // Universe memory: user-planted seeds (for share links) and "cells" that
+    // age and may collapse into supernovae.
+    this.seedLog = [];
+    this._cells = [];
+    /** Optional hook, set by the app: (position) => void on each supernova. */
+    this.onSupernova = null;
   }
 
   /**
@@ -63,10 +77,30 @@ export class Cosmos {
   /**
    * Seed a cluster + shockwave at a world point. Rapid repeats share one
    * shockwave (throttled) so stacked additive quads cannot saturate to white.
+   * @param {THREE.Vector3} worldPoint
+   * @param {number} count
+   * @param {{share?: boolean, cascade?: boolean}} [opts] `share: false` skips
+   *   the share-log entry; `cascade: false` marks seeds restored from a shared
+   *   URL so they do not immediately explode into supernovae.
    */
-  seedAt(worldPoint, count = 340) {
+  seedAt(worldPoint, count = 340, opts = {}) {
     this.galaxy.seedBurst(worldPoint);
     this.clusters.seed(worldPoint, count);
+
+    if (opts.share !== false) {
+      this.seedLog.push({ x: worldPoint.x, z: worldPoint.z, count });
+      if (this.seedLog.length > MAX_LOGGED_SEEDS) this.seedLog.shift();
+    }
+
+    // Every seed becomes a living cell that may one day go supernova.
+    this._cells.push({
+      pos: worldPoint.clone(),
+      born: this._lastElapsed,
+      count,
+      silent: opts.cascade === false,
+      due: this._lastElapsed + SUPERNOVA_AGE + Math.random() * 4.0
+    });
+    if (this._cells.length > MAX_CELLS) this._cells.shift();
 
     if (this._lastElapsed - this._lastBurst > 0.16) {
       this._lastBurst = this._lastElapsed;
@@ -109,8 +143,53 @@ export class Cosmos {
     this.clusters.update(dt, elapsed);
     this.bursts.update(elapsed);
 
+    this._updateLifecycle(elapsed);
+
     const target = Math.max(this.galaxy.getEnergy(), this.clusters.getEnergy());
     this._energy += (target - this._energy) * Math.min(1, dt * 3.0);
+  }
+
+  /**
+   * Age every seeded cluster; mature ones may collapse into a supernova —
+   * a golden shockwave plus a smaller second-generation cluster nearby.
+   */
+  _updateLifecycle(elapsed) {
+    if (this._cells.length === 0) return;
+
+    const survivors = [];
+    for (const cell of this._cells) {
+      if (elapsed < cell.due) {
+        survivors.push(cell);
+        continue;
+      }
+
+      cell.collapsed = true;
+
+      // Seeds restored from a shared URL stay quiet: they replay the shared
+      // layout without instantly exploding.
+      const mayExplode = !this.reducedMotion && !cell.silent;
+      if (mayExplode && Math.random() < SUPERNOVA_CHANCE) {
+        const color = this._burstColor.setHSL(0.09 + Math.random() * 0.04, 0.85, 0.7);
+        this.bursts.spawn(cell.pos, color);
+        this.galaxy.seedBurst(cell.pos);
+
+        // Second generation: smaller, slightly offset, not share-logged.
+        const offset = new THREE.Vector3(
+          (Math.random() - 0.5) * 14,
+          0,
+          (Math.random() - 0.5) * 14
+        ).add(cell.pos);
+        this.seedAt(offset, Math.min(180, Math.max(60, cell.count * 0.3 | 0)), { share: false });
+        this._energy = Math.min(1.0, this._energy + 0.35);
+        this.onSupernova?.(cell.pos);
+      }
+      // Collapsed cells are dropped either way; the chain continues via the
+      // second-generation cell pushed above.
+    }
+
+    // Keep only cells that have not reached their due date; re-seeds pushed
+    // during the loop above are picked up next frame.
+    this._cells = survivors;
   }
 
   getEnergy() {

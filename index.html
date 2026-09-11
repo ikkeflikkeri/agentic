@@ -4,7 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#03040a" />
-<title>AETHER — a living cosmic ecosystem</title>
+    <title>AETHER — a living cosmic ecosystem</title>
+    <meta name="description" content="An interactive cosmic ecosystem. Drag to seed star clusters, watch them live, collapse and be reborn — then share your universe as a link." />
+
+    <!-- Social previews -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AETHER — a living cosmic ecosystem" />
+    <meta property="og:description" content="Drag to seed star clusters, watch them live and collapse, and share your universe as a single link." />
+    <meta property="og:site_name" content="AETHER" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="AETHER — a living cosmic ecosystem" />
+    <meta name="twitter:description" content="Drag to seed star clusters, watch them live and collapse, and share your universe as a single link." />
 <style>
   :root {
     --ink: #e8ecff;
@@ -69,6 +79,52 @@
     position: absolute;
     letter-spacing: 0.02em;
   }
+
+  /* ---------- Audio toggle ---------- */
+  #audio-toggle {
+    pointer-events: auto;
+    position: absolute;
+    right: clamp(20px, 4vw, 60px);
+    bottom: clamp(20px, 4vh, 48px);
+    background: transparent;
+    border: 1px solid rgba(150, 180, 255, 0.28);
+    border-radius: 999px;
+    color: var(--ink-dim);
+    font: inherit;
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    text-indent: 0.28em;
+    padding: 8px 16px 7px;
+    cursor: pointer;
+    transition: color 0.5s var(--ease), border-color 0.5s var(--ease);
+  }
+  #audio-toggle:hover,
+  #audio-toggle:focus-visible {
+    color: var(--ink);
+    border-color: rgba(150, 180, 255, 0.55);
+  }
+  #audio-toggle:focus-visible { outline: none; }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    pointer-events: none;
+    position: absolute;
+    left: 50%;
+    bottom: clamp(58px, 9vh, 96px);
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 92vw;
+    text-align: center;
+    font-size: clamp(10px, 1vw, 12px);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(232, 236, 255, 0.92);
+    text-shadow: 0 0 24px rgba(120, 160, 255, 0.45);
+    opacity: 0;
+    transition: opacity 0.6s var(--ease);
+  }
+  #toast.show { opacity: 1; }
 
   #title-block {
     top: clamp(26px, 5vh, 64px);
@@ -173,8 +229,11 @@
       <p id="subtitle">A living cosmic ecosystem</p>
     </div>
     <p class="hud-block" id="hint">
-      <b>Drag</b> to seed star clusters &nbsp;·&nbsp; <b>Move</b> to look &nbsp;·&nbsp; <b>Right-drag</b> / <b>Wheel</b> to orbit
+      <b>Drag</b> to seed star clusters &nbsp;·&nbsp; <b>Move</b> to look &nbsp;·&nbsp; <b>Right-drag</b> / <b>Wheel</b> to orbit<br />
+      <b>S</b> to share this sky &nbsp;·&nbsp; <b>M</b> for sound
     </p>
+    <div class="hud-block" id="toast" role="status" aria-live="polite"></div>
+    <button id="audio-toggle" type="button" aria-pressed="false">sound off</button>
     <div class="hud-block" id="stats">
       <div><span id="stat-fps">—</span> fps</div>
       <div><span id="stat-count">—</span> stars</div>

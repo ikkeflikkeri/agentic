@@ -5,6 +5,7 @@ import { PostFX } from './postfx.js';
 import { QualityManager } from './quality.js';
 import { HUD } from '../ui/hud.js';
 import { initAudio } from '../audio/bridge.js';
+import { decodeSeeds, buildShareUrl } from './share.js';
 
 export function webglAvailable() {
   let context = null;
@@ -56,6 +57,15 @@ export class App {
     this._lastHudActivity = 0;
     this.reducedMotion = prefersReducedMotion();
 
+    // Audio preference survives reloads; the engine still needs a gesture to
+    // actually start, the toggle only records intent.
+    this._audioMuted = (() => {
+      try { return localStorage.getItem('aether-muted') === '1'; } catch { return false; }
+    })();
+    // Seeds restored from a shared URL are staged here and planted over the
+    // first seconds of the intro so the sky assembles cinematically.
+    this._scheduledSeeds = this._readSharedSeeds();
+
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
       antialias: false,
@@ -85,15 +95,24 @@ export class App {
     this._boundResize = () => this._onResize();
     this._bindEvents();
 
+    if (this.hud.audioBtn) this.hud.audioBtn.addEventListener('click', () => this._toggleAudio());
+    this.hud.setAudioState(this._audioMuted, false); // engine not ready yet
+
+    // Supernovae ring the soundscape bell so collapse moments are audible.
+    this.cosmos.onSupernova = () => this._audio?.burst?.();
+
     // Optional audio: resolves to null when no engine module is present.
     initAudio(() => this.cosmos.getEnergy())
       .then((bridge) => {
         this._audio = bridge;
         // If the visitor already interacted before the import resolved, start now.
         if (this._audioEnabled) bridge?.enable?.();
+        this._audio?.setMuted?.(this._audioMuted);
+        this.hud.setAudioState(this._audioMuted, !!bridge);
       })
       .catch(() => {
         this._audio = null;
+        this.hud.setAudioState(true, false);
       });
 
     this.hud.start();
@@ -156,7 +175,10 @@ export class App {
     window.addEventListener('pointercancel', handlers.pointercancel, { passive: true });
     this.canvas.addEventListener('wheel', handlers.wheel, { passive: false });
     this.canvas.addEventListener('contextmenu', handlers.contextmenu);
-    this.canvas.addEventListener('keydown', handlers.keydown);
+    // keydown on window so shortcuts and look keys work before the canvas has
+    // ever been clicked (page keydown bubbles from any focused element; there
+    // are no text inputs on the page).
+    window.addEventListener('keydown', handlers.keydown);
   }
 
   _onResize() {
@@ -204,10 +226,71 @@ export class App {
   _enableAudio() {
     this._audioEnabled = true;
     this._audio?.enable?.();
+    this._audio?.setMuted?.(this._audioMuted);
+  }
+
+  /** Toggle the ambient soundscape; persists the preference. */
+  _toggleAudio() {
+    this._audioMuted = !this._audioMuted;
+    try { localStorage.setItem('aether-muted', this._audioMuted ? '1' : '0'); } catch { /* ignore */ }
+    if (!this._audioMuted) this._enableAudio();
+    this._audio?.setMuted?.(this._audioMuted);
+    this.hud.setAudioState(this._audioMuted, !!this._audio);
+    this.hud.toast(this._audioMuted ? 'sound off' : 'sound on');
+  }
+
+  /** Read a `#u=…` hash into seed positions, tolerating garbage. */
+  _readSharedSeeds() {
+    let seeds = null;
+    try { seeds = decodeSeeds(location.hash); } catch { seeds = null; }
+    if (!Array.isArray(seeds) || seeds.length === 0) return [];
+
+    // Clean the address bar once decoded so reloading starts a fresh sky.
+    try { history.replaceState(null, '', location.pathname + location.search); } catch { /* ignore */ }
+
+    return seeds.map((seed, i) => ({
+      at: 1.6 + i * 0.7,
+      point: new THREE.Vector3(seed.x, 0, seed.z),
+      count: seed.count
+    }));
+  }
+
+  /** Copy a share URL that replays every user-planted seed. */
+  _shareUniverse() {
+    const url = buildShareUrl(this.cosmos.seedLog);
+    if (!url) {
+      this.hud.toast('seed some stars first');
+      return;
+    }
+    const done = () => this.hud.toast('universe link copied');
+    const fail = () => this.hud.toast('could not copy — see address bar');
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(done, () => this._fallbackCopy(url) ? done() : fail());
+    } else {
+      this._fallbackCopy(url) ? done() : fail();
+    }
+  }
+
+  /** Legacy clipboard fallback; returns success. */
+  _fallbackCopy(text) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
   }
 
   _onKeyDown(e) {
     const step = 0.05;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     switch (e.key) {
       case ' ':
       case 'Enter':
@@ -217,6 +300,14 @@ export class App {
         this.rig.skipIntro();
         this.cosmos.seedAt(this.cosmos.projectToPlane(new THREE.Vector2(0, 0), this.camera), 420);
         this._audio?.burst?.();
+        break;
+      case 's':
+      case 'S':
+        this._shareUniverse();
+        break;
+      case 'm':
+      case 'M':
+        this._toggleAudio();
         break;
       case 'ArrowLeft':
         this.rig.look(step, 0);
@@ -331,6 +422,13 @@ export class App {
     this.rig.update(dt);
     this.cosmos.update(dt, this.elapsed);
 
+    // Replay a shared universe: plant its seeds cinematically over the intro.
+    while (this._scheduledSeeds.length > 0 && this._scheduledSeeds[0].at <= this.elapsed) {
+      const next = this._scheduledSeeds.shift();
+      this.cosmos.seedAt(next.point, next.count, { share: false, cascade: false });
+      this._audio?.burst?.();
+    }
+
     const energy = this.cosmos.getEnergy();
     this.postfx.update(this.elapsed, energy);
     if (this._audio) this._audio.setIntensity(energy);
@@ -355,7 +453,7 @@ export class App {
       window.removeEventListener('pointercancel', h.pointercancel);
       this.canvas.removeEventListener('wheel', h.wheel);
       this.canvas.removeEventListener('contextmenu', h.contextmenu);
-      this.canvas.removeEventListener('keydown', h.keydown);
+      window.removeEventListener('keydown', h.keydown);
       this._handlers = null;
     }
 
