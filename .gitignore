@@ -1,0 +1,10 @@
+# Node / CI artifacts (the site itself needs no build step)
+node_modules/
+ci-artifacts/
+
+# Vercel local link state
+.vercel/
+
+# OS noise
+.DS_Store
+Thumbs.db
