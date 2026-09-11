@@ -23,6 +23,7 @@ function clamp01(value) {
 
 let api = null;
 let enabled = false;
+let enabling = false;
 
 export function hasAudio() {
   return api !== null;
@@ -55,15 +56,31 @@ export async function initAudio(getEnergy) {
         return getEnergy ? clamp01(getEnergy()) : 0;
       },
 
-      /** Must be invoked from a user gesture; safe to call repeatedly. */
+      /**
+       * Must be invoked from a user gesture. Idempotent while a successful
+       * init is in flight or done; if init resolves false the next gesture
+       * retries.
+       */
       enable() {
-        if (enabled) return;
-        enabled = true;
+        if (enabled || enabling) return;
+        enabling = true;
         try {
           const result = engine.init?.();
-          if (result && typeof result.catch === 'function') result.catch(() => {});
+          if (result && typeof result.then === 'function') {
+            result
+              .then((ok) => {
+                enabling = false;
+                if (ok !== false) enabled = true;
+              })
+              .catch(() => {
+                enabling = false;
+              });
+          } else {
+            enabling = false;
+            enabled = result !== false;
+          }
         } catch {
-          /* audio must never break the visuals */
+          enabling = false;
         }
       },
 
@@ -107,6 +124,7 @@ export async function initAudio(getEnergy) {
         }
         api = null;
         enabled = false;
+        enabling = false;
       }
     };
 

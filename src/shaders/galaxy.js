@@ -10,7 +10,6 @@ export const galaxyVertexShader = /* glsl */ `
   uniform float uSize;
   uniform float uPixelRatio;
   uniform float uSpin;
-  uniform float uOpacity;
 
   uniform vec3  uRipplePos[ ${MAX_RIPPLES} ];
   uniform float uRippleStart[ ${MAX_RIPPLES} ];

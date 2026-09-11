@@ -16,8 +16,9 @@ function damp(current, target, lambda, dt) {
  * parallax and optional free-look. Nothing snaps; every value is eased.
  */
 export class CameraRig {
-  constructor(camera) {
+  constructor(camera, options = {}) {
     this.camera = camera;
+    this.reducedMotion = options.reducedMotion === true;
 
     this.home = { yaw: 0, pitch: 0.52, distance: 150 };
     this.state = { yaw: this.home.yaw, pitch: this.home.pitch, distance: this.home.distance };
@@ -52,6 +53,18 @@ export class CameraRig {
 
     camera.position.copy(this._current);
     camera.lookAt(this._currentLook);
+
+    // Reduced motion: skip the fly-in entirely and settle on the home vantage.
+    if (this.reducedMotion) {
+      this.intro.progress = 1;
+      this.intro.done = true;
+      this._current.copy(home);
+      this._desired.copy(home);
+      this._currentLook.set(0, 0, 0);
+      this._desiredLook.set(0, 0, 0);
+      camera.position.copy(home);
+      camera.lookAt(0, 0, 0);
+    }
   }
 
   _spherical(yaw, pitch, distance) {
@@ -147,6 +160,10 @@ export class CameraRig {
 
     this.camera.position.copy(this._current);
     this.camera.lookAt(this._currentLook);
-    this.camera.rotation.z += Math.sin(performance.now() * 0.00013) * 0.006;
+
+    // Continuous idle roll is motion; suppress it when reduced motion is set.
+    if (!this.reducedMotion) {
+      this.camera.rotation.z += Math.sin(performance.now() * 0.00013) * 0.006;
+    }
   }
 }

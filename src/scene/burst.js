@@ -74,7 +74,7 @@ export class BurstField {
       const scale = 2.5 + eased * 42;
       effect.mesh.scale.set(scale, scale, 1);
       effect.material.uniforms.uProgress.value = eased;
-      effect.material.uniforms.uOpacity.value = Math.min(1, (1 - progress) * 1.4);
+      effect.material.uniforms.uOpacity.value = Math.min(1, (1 - progress) * 1.0);
     }
   }
 

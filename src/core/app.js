@@ -7,12 +7,26 @@ import { HUD } from '../ui/hud.js';
 import { initAudio } from '../audio/bridge.js';
 
 export function webglAvailable() {
+  let context = null;
   try {
     const canvas = document.createElement('canvas');
-    return !!(
-      window.WebGLRenderingContext &&
-      (canvas.getContext('webgl2') || canvas.getContext('webgl'))
-    );
+    context = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    return !!(window.WebGLRenderingContext && context);
+  } catch {
+    return false;
+  } finally {
+    // Release the probe context so it does not count against the page limit.
+    try {
+      context?.getExtension('WEBGL_lose_context')?.loseContext();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function prefersReducedMotion() {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   } catch {
     return false;
   }
@@ -38,6 +52,9 @@ export class App {
     this._lookId = null;
     this._resizePending = false;
     this._audio = null;
+    this._audioEnabled = false;
+    this._lastHudActivity = 0;
+    this.reducedMotion = prefersReducedMotion();
 
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
@@ -56,9 +73,11 @@ export class App {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(58, size.width / size.height, 0.5, 9000);
 
-    this.cosmos = new Cosmos(this.scene);
-    this.rig = new CameraRig(this.camera);
-    this.postfx = new PostFX(this.renderer, this.scene, this.camera, size);
+    this.cosmos = new Cosmos(this.scene, { reducedMotion: this.reducedMotion });
+    this.rig = new CameraRig(this.camera, { reducedMotion: this.reducedMotion });
+    this.postfx = new PostFX(this.renderer, this.scene, this.camera, size, {
+      reducedMotion: this.reducedMotion
+    });
 
     this.quality = new QualityManager((tier, pr) => this._applyQuality(tier, pr));
     this._applyQuality(this.quality.tier, this.quality.pixelRatio);
@@ -109,31 +128,43 @@ export class App {
   }
 
   _bindEvents() {
-    window.addEventListener('resize', this._boundResize, { passive: true });
-    window.addEventListener('orientationchange', this._boundResize, { passive: true });
-
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        this.paused = true;
-      } else {
-        this.paused = false;
-        this._last = performance.now() / 1000;
-      }
+    const handlers = (this._handlers = {
+      resize: this._boundResize,
+      visibility: () => {
+        if (document.hidden) {
+          this.paused = true;
+        } else {
+          this.paused = false;
+          this._last = performance.now() / 1000;
+        }
+      },
+      pointerdown: (e) => this._onPointerDown(e),
+      pointermove: (e) => this._onPointerMove(e),
+      pointerup: (e) => this._onPointerUp(e),
+      pointercancel: (e) => this._onPointerUp(e),
+      wheel: (e) => this._onWheel(e),
+      contextmenu: (e) => e.preventDefault(),
+      keydown: (e) => this._onKeyDown(e)
     });
 
-    this.canvas.addEventListener('pointerdown', (e) => this._onPointerDown(e));
-    window.addEventListener('pointermove', (e) => this._onPointerMove(e), { passive: true });
-    window.addEventListener('pointerup', (e) => this._onPointerUp(e), { passive: true });
-    window.addEventListener('pointercancel', (e) => this._onPointerUp(e), { passive: true });
-    this.canvas.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
-    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    this.canvas.addEventListener('keydown', (e) => this._onKeyDown(e));
+    window.addEventListener('resize', handlers.resize, { passive: true });
+    window.addEventListener('orientationchange', handlers.resize, { passive: true });
+    document.addEventListener('visibilitychange', handlers.visibility);
+    this.canvas.addEventListener('pointerdown', handlers.pointerdown);
+    window.addEventListener('pointermove', handlers.pointermove, { passive: true });
+    window.addEventListener('pointerup', handlers.pointerup, { passive: true });
+    window.addEventListener('pointercancel', handlers.pointercancel, { passive: true });
+    this.canvas.addEventListener('wheel', handlers.wheel, { passive: false });
+    this.canvas.addEventListener('contextmenu', handlers.contextmenu);
+    this.canvas.addEventListener('keydown', handlers.keydown);
   }
 
   _onResize() {
     if (this._resizePending) return;
     this._resizePending = true;
-    requestAnimationFrame(() => {
+
+    // rAF is paused while the page is hidden, so apply synchronously then.
+    const apply = () => {
       this._resizePending = false;
       const { width, height } = this._size();
       const pr = this.quality.pixelRatio;
@@ -145,7 +176,10 @@ export class App {
 
       this.postfx.setPixelRatio(pr);
       this.postfx.setSize(width, height);
-    });
+    };
+
+    if (document.hidden) apply();
+    else requestAnimationFrame(apply);
   }
 
   _ndc(clientX, clientY) {
@@ -163,9 +197,11 @@ export class App {
     this._audio?.burst?.();
   }
 
-  /** Web Audio needs a user gesture; enable once, then stay enabled. */
+  /**
+   * Web Audio needs a user gesture. Called on every gesture; the bridge
+   * de-duplicates and retries if an earlier init attempt failed.
+   */
   _enableAudio() {
-    if (this._audioEnabled) return;
     this._audioEnabled = true;
     this._audio?.enable?.();
   }
@@ -224,6 +260,14 @@ export class App {
   _onPointerMove(e) {
     const ndc = this._ndc(e.clientX, e.clientY);
     this.rig.setPointer(ndc.x, ndc.y);
+
+    // Hovering should bring the HUD back; throttle so it is not touched on
+    // every single move event.
+    const now = performance.now();
+    if (now - this._lastHudActivity > 250) {
+      this._lastHudActivity = now;
+      this.hud.notifyActivity();
+    }
 
     const prev = this._pointers.get(e.pointerId);
     if (!prev) return;
@@ -299,8 +343,24 @@ export class App {
   dispose() {
     this._running = false;
     cancelAnimationFrame(this._raf);
-    window.removeEventListener('resize', this._boundResize);
-    window.removeEventListener('orientationchange', this._boundResize);
+
+    const h = this._handlers;
+    if (h) {
+      window.removeEventListener('resize', h.resize);
+      window.removeEventListener('orientationchange', h.resize);
+      document.removeEventListener('visibilitychange', h.visibility);
+      this.canvas.removeEventListener('pointerdown', h.pointerdown);
+      window.removeEventListener('pointermove', h.pointermove);
+      window.removeEventListener('pointerup', h.pointerup);
+      window.removeEventListener('pointercancel', h.pointercancel);
+      this.canvas.removeEventListener('wheel', h.wheel);
+      this.canvas.removeEventListener('contextmenu', h.contextmenu);
+      this.canvas.removeEventListener('keydown', h.keydown);
+      this._handlers = null;
+    }
+
+    this._audio?.dispose?.();
+    this._audio = null;
     this.cosmos.dispose();
     this.postfx.dispose();
     this.renderer.dispose();

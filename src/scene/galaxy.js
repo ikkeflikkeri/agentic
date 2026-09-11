@@ -24,8 +24,9 @@ function mixColor(a, b, t, out) {
  * shader from cylindrical coordinates.
  */
 export class Galaxy {
-  constructor(maxCount = 140000) {
+  constructor(maxCount = 140000, options = {}) {
     this.maxCount = maxCount;
+    this.reducedMotion = options.reducedMotion === true;
 
     const positions = new Float32Array(maxCount * 3); // radius, angle, height
     const colors = new Float32Array(maxCount * 3);
@@ -141,10 +142,11 @@ export class Galaxy {
     const i = this._rippleIndex % MAX_RIPPLES;
     this._rippleIndex++;
 
+    const damp = this.reducedMotion ? 0.45 : 1.0;
     this.uniforms.uRipplePos.value[i].copy(worldPoint);
     this.uniforms.uRippleStart.value[i] = this._time;
-    this.uniforms.uRippleSpeed.value[i] = 8.5 + Math.random() * 3.5;
-    this.uniforms.uRippleStrength.value[i] = 1.15 + Math.random() * 0.4;
+    this.uniforms.uRippleSpeed.value[i] = (8.5 + Math.random() * 3.5) * damp;
+    this.uniforms.uRippleStrength.value[i] = (1.15 + Math.random() * 0.4) * damp;
     this.material.uniformsNeedUpdate = true;
   }
 

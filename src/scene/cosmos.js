@@ -11,12 +11,18 @@ const GALACTIC_PLANE = new THREE.Vector3(0, 1, 0);
  * Composes the whole universe and owns the interaction entry point.
  */
 export class Cosmos {
-  constructor(scene) {
+  constructor(scene, options = {}) {
     this.scene = scene;
+    this.reducedMotion = options.reducedMotion === true;
+
+    // Continuous background motion runs at a fraction of speed (or off) when
+    // the visitor prefers reduced motion.
+    this._animTime = 0;
+    this._timeScale = this.reducedMotion ? 0.12 : 1.0;
 
     this.nebula = new Nebula(2600);
     this.starfield = new Starfield(14000);
-    this.galaxy = new Galaxy(140000);
+    this.galaxy = new Galaxy(140000, { reducedMotion: this.reducedMotion });
     this.clusters = new ClusterField(9000);
     this.bursts = new BurstField();
 
@@ -36,6 +42,8 @@ export class Cosmos {
 
     this._energy = 0;
     this._lastSeed = 0;
+    this._lastBurst = -10;
+    this._lastElapsed = 0;
   }
 
   /**
@@ -52,13 +60,22 @@ export class Cosmos {
     return this._hit.clone();
   }
 
-  /** Seed a cluster + shockwave at a world point. */
+  /**
+   * Seed a cluster + shockwave at a world point. Rapid repeats share one
+   * shockwave (throttled) so stacked additive quads cannot saturate to white.
+   */
   seedAt(worldPoint, count = 340) {
     this.galaxy.seedBurst(worldPoint);
     this.clusters.seed(worldPoint, count);
-    this._burstColor.setHSL(0.56 + Math.random() * 0.12, 0.7, 0.72);
-    this.bursts.spawn(worldPoint, this._burstColor);
-    this._energy = Math.min(1.5, this._energy + 0.8);
+
+    if (this._lastElapsed - this._lastBurst > 0.16) {
+      this._lastBurst = this._lastElapsed;
+      this._burstColor.setHSL(0.56 + Math.random() * 0.12, 0.7, 0.72);
+      this.bursts.spawn(worldPoint, this._burstColor);
+    }
+
+    // Cap accumulated energy so bloom does not spike on repeated seeding.
+    this._energy = Math.min(1.0, this._energy + 0.5);
   }
 
   /** Throttled seeding used while dragging so we do not spawn every frame. */
@@ -81,9 +98,14 @@ export class Cosmos {
   }
 
   update(dt, elapsed) {
-    this.nebula.update(elapsed);
-    this.starfield.update(elapsed);
-    this.galaxy.update(elapsed);
+    this._lastElapsed = elapsed;
+    this._animTime += dt * this._timeScale;
+
+    // Continuous backdrop motion uses the scaled clock; discrete effects
+    // (clusters, shockwaves) keep the real clock so they stay snappy.
+    this.nebula.update(this._animTime);
+    this.starfield.update(this._animTime);
+    this.galaxy.update(this._animTime);
     this.clusters.update(dt, elapsed);
     this.bursts.update(elapsed);
 

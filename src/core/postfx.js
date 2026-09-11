@@ -5,17 +5,20 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { gradeShader } from '../shaders/grade.js';
+import { highlightShader } from '../shaders/highlight.js';
 
 /**
  * Builds the post-processing chain:
  *   scene -> UnrealBloom -> film grade (grain/vignette/aberration) -> output
  */
 export class PostFX {
-  constructor(renderer, scene, camera, size) {
+  constructor(renderer, scene, camera, size, options = {}) {
     this.renderer = renderer;
+    this.reducedMotion = options.reducedMotion === true;
     this.composer = new EffectComposer(renderer);
 
     this.renderPass = new RenderPass(scene, camera);
+    this.highlightPass = new ShaderPass(highlightShader);
 
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.width, size.height),
@@ -30,11 +33,13 @@ export class PostFX {
     this.outputPass = new OutputPass();
 
     this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.highlightPass); // bounds brightness before bloom
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(this.gradePass);
     this.composer.addPass(this.outputPass);
 
     this._baseBloom = 0.68;
+    this.gradePass.uniforms.uGrain.value = this.reducedMotion ? 0.012 : 0.05;
   }
 
   update(elapsed, energy) {

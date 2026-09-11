@@ -28,7 +28,7 @@ export const burstFragmentShader = /* glsl */ `
     float alpha = ( ring * 0.9 + core * 1.35 ) * ( 1.0 - uProgress ) * uOpacity;
     if ( alpha < 0.002 ) discard;
 
-    vec3 color = uColor * ( 1.0 + core * 1.6 );
+    vec3 color = uColor * ( 1.0 + core * 0.8 );
     gl_FragColor = vec4( color, alpha );
   }
 `;
