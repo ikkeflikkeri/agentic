@@ -70,6 +70,8 @@ export class App {
     initAudio(() => this.cosmos.getEnergy())
       .then((bridge) => {
         this._audio = bridge;
+        // If the visitor already interacted before the import resolved, start now.
+        if (this._audioEnabled) bridge?.enable?.();
       })
       .catch(() => {
         this._audio = null;
@@ -158,6 +160,14 @@ export class App {
     const ndc = this._ndc(clientX, clientY);
     const point = this.cosmos.projectToPlane(new THREE.Vector2(ndc.x, ndc.y), this.camera);
     this.cosmos.seedAt(point, count);
+    this._audio?.burst?.();
+  }
+
+  /** Web Audio needs a user gesture; enable once, then stay enabled. */
+  _enableAudio() {
+    if (this._audioEnabled) return;
+    this._audioEnabled = true;
+    this._audio?.enable?.();
   }
 
   _onKeyDown(e) {
@@ -167,8 +177,10 @@ export class App {
       case 'Enter':
         e.preventDefault();
         this.hud.notifyActivity();
+        this._enableAudio();
         this.rig.skipIntro();
         this.cosmos.seedAt(this.cosmos.projectToPlane(new THREE.Vector2(0, 0), this.camera), 420);
+        this._audio?.burst?.();
         break;
       case 'ArrowLeft':
         this.rig.look(step, 0);
@@ -189,6 +201,7 @@ export class App {
 
   _onPointerDown(e) {
     this.hud.notifyActivity();
+    this._enableAudio();
     this.rig.skipIntro();
     this._pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 

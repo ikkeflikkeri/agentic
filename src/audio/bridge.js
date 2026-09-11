@@ -1,69 +1,118 @@
 /**
  * Optional audio hook.
  *
- * A sibling worker may contribute `src/audio/engine.js`. If that module is
- * present this bridge imports it dynamically and forwards an intensity signal
- * (0..1) derived from scene energy. If it is absent — or fails for any reason —
- * the import rejects quietly and the visual experience continues unaffected.
+ * `src/audio/engine.js` provides a generative Web Audio soundscape via
+ * `createAudioEngine()`. This bridge imports it dynamically and exposes a tiny,
+ * failure-proof surface for the render loop:
+ *
+ *   enable()          -> call from a user gesture (Web Audio autoplay policy)
+ *   setIntensity(0..1) -> forwarded every frame from scene energy
+ *   burst()           -> short accent whenever the visitor seeds a cluster
+ *   setMuted(bool)
+ *   dispose()
+ *
+ * If the engine is missing, blocked, or throws at any point, the import rejects
+ * quietly and the visual experience is unaffected.
  */
 
-let bridge = null;
+function clamp01(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+
+let api = null;
+let enabled = false;
 
 export function hasAudio() {
-  return bridge !== null;
+  return api !== null;
 }
 
 /**
  * Attempt to attach to the optional audio engine.
- * @param {() => number} getEnergy callback returning current 0..1 energy
+ * @param {() => number} [getEnergy] callback returning current 0..1 energy
  * @returns {Promise<object|null>} the bridge, or null when audio is unavailable
  */
 export async function initAudio(getEnergy) {
-  if (bridge) return bridge;
+  if (api) return api;
 
   try {
-    // Resolved at runtime; throws cleanly when the module does not exist.
-    const mod = await import(/* @vite-ignore */ './engine.js');
-    if (!mod) return null;
+    const mod = await import('./engine.js');
 
-    let engine = null;
-    if (typeof mod.createEngine === 'function') engine = mod.createEngine();
-    else if (mod.default && typeof mod.default.setIntensity === 'function') engine = mod.default;
-    else if (mod.engine) engine = mod.engine;
+    const factory =
+      typeof mod.createAudioEngine === 'function'
+        ? mod.createAudioEngine
+        : typeof mod.default === 'function'
+          ? mod.default
+          : null;
 
-    if (!engine || typeof engine.setIntensity !== 'function') return null;
+    if (!factory) return null;
 
-    // Engines that need a user gesture expose start/resume; failures are safe.
-    try {
-      await engine.start?.();
-      await engine.resume?.();
-    } catch {
-      /* audio may require a gesture; ignore */
-    }
+    const engine = factory();
 
-    bridge = {
-      setIntensity(value) {
+    api = {
+      get energy() {
+        return getEnergy ? clamp01(getEnergy()) : 0;
+      },
+
+      /** Must be invoked from a user gesture; safe to call repeatedly. */
+      enable() {
+        if (enabled) return;
+        enabled = true;
         try {
-          engine.setIntensity(Math.max(0, Math.min(1, value)));
+          const result = engine.init?.();
+          if (result && typeof result.catch === 'function') result.catch(() => {});
         } catch {
-          /* never let audio break the render loop */
+          /* audio must never break the visuals */
         }
       },
-      getEnergy,
-      dispose() {
+
+      setIntensity(value) {
         try {
-          engine.dispose?.();
-          engine.stop?.();
+          engine.setIntensity?.(clamp01(value));
         } catch {
           /* ignore */
         }
-        bridge = null;
+      },
+
+      burst() {
+        try {
+          engine.burst?.();
+        } catch {
+          /* ignore */
+        }
+      },
+
+      setMuted(value) {
+        try {
+          engine.setMuted?.(!!value);
+        } catch {
+          /* ignore */
+        }
+      },
+
+      isReady() {
+        try {
+          return !!engine.isReady?.();
+        } catch {
+          return false;
+        }
+      },
+
+      dispose() {
+        try {
+          engine.dispose?.();
+        } catch {
+          /* ignore */
+        }
+        api = null;
+        enabled = false;
       }
     };
 
-    return bridge;
+    return api;
   } catch {
-    // No engine present; stay silent and keep rendering.
+    // No engine present, or it failed to load; stay silent and keep rendering.
     return null;
   }
 }
