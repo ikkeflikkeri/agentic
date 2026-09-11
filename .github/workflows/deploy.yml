@@ -18,43 +18,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Exposed via env because the `secrets` context is not available in step
+    # `if` expressions; `env` is.
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
     steps:
-      - name: Require Vercel credentials
-        if: ${{ secrets.VERCEL_TOKEN == '' }}
+      - name: Note when Vercel is not configured
+        if: ${{ env.VERCEL_TOKEN == '' }}
         run: |
           echo "::warning title=Vercel not configured::VERCEL_TOKEN is not set; skipping production deploy."
 
       - name: Checkout
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        if: ${{ env.VERCEL_TOKEN != '' }}
         uses: actions/checkout@v4
 
       - name: Set up Node
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        if: ${{ env.VERCEL_TOKEN != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install Vercel CLI
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        if: ${{ env.VERCEL_TOKEN != '' }}
         run: npm install --global vercel@latest
 
       - name: Pull Vercel environment (production)
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel pull --yes --environment=production --token="${{ secrets.VERCEL_TOKEN }}"
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build (prebuilt static output)
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel build --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy prebuilt to production
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel deploy --prebuilt --prod --token="${{ secrets.VERCEL_TOKEN }}"
+        if: ${{ env.VERCEL_TOKEN != '' }}
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
