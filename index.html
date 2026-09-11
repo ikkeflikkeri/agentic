@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#03040a" />
+<title>AETHER — a living cosmic ecosystem</title>
+<style>
+  :root {
+    --ink: #e8ecff;
+    --ink-dim: rgba(232, 236, 255, 0.62);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #03040a;
+    color: var(--ink);
+    font-family: "Inter", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body { touch-action: none; }
+
+  #stage {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  #stage canvas { display: block; }
+
+  #stage:focus-visible {
+    outline: 1px solid rgba(150, 180, 255, 0.5);
+    outline-offset: -6px;
+  }
+
+  /* Soft cinematic framing + fade-in from black */
+  #veil {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    background: radial-gradient(120% 90% at 50% 42%, transparent 40%, rgba(0, 0, 0, 0.55) 100%);
+    opacity: 1;
+    transition: opacity 2.2s var(--ease);
+  }
+  #veil.live { opacity: 0; }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 1.4s var(--ease);
+  }
+  #hud.idle { opacity: 0; }
+
+  .hud-block {
+    position: absolute;
+    letter-spacing: 0.02em;
+  }
+
+  #title-block {
+    top: clamp(26px, 5vh, 64px);
+    left: clamp(24px, 5vw, 72px);
+    max-width: min(72vw, 620px);
+  }
+
+  #title {
+    font-size: clamp(30px, 5.4vw, 72px);
+    font-weight: 300;
+    letter-spacing: 0.42em;
+    text-indent: 0.42em;
+    line-height: 1;
+    text-shadow: 0 0 34px rgba(120, 160, 255, 0.45), 0 0 90px rgba(120, 80, 255, 0.25);
+  }
+
+  #subtitle {
+    margin-top: 14px;
+    font-size: clamp(10px, 1.05vw, 13px);
+    letter-spacing: 0.52em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    text-indent: 0.52em;
+  }
+
+  #hint {
+    left: 50%;
+    bottom: clamp(24px, 5vh, 58px);
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 92vw;
+    text-align: center;
+    font-size: clamp(10px, 1vw, 12px);
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    line-height: 1.9;
+  }
+  #hint b { color: rgba(232, 236, 255, 0.92); font-weight: 500; }
+
+  #stats {
+    right: clamp(20px, 4vw, 60px);
+    top: clamp(26px, 5vh, 64px);
+    text-align: right;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: rgba(232, 236, 255, 0.34);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.9;
+  }
+  #stats span { color: rgba(232, 236, 255, 0.6); }
+
+  /* ---------- Fallback ---------- */
+  #fallback {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: none;
+    place-items: center;
+    background: #03040a;
+    text-align: center;
+    padding: 8vw;
+  }
+  #fallback.show { display: grid; }
+  #fallback h1 {
+    font-size: clamp(22px, 3.4vw, 40px);
+    font-weight: 300;
+    letter-spacing: 0.4em;
+    text-indent: 0.4em;
+    margin-bottom: 22px;
+  }
+  #fallback p {
+    color: var(--ink-dim);
+    font-size: 14px;
+    line-height: 1.9;
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #veil { transition: none; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="stage" role="application" tabindex="0" aria-label="Interactive cosmic simulation. Click or drag to seed star clusters; use the arrow keys to look around and Space to seed at the centre."></canvas>
+
+  <div id="veil" aria-hidden="true"></div>
+
+  <div id="hud" role="presentation">
+    <div class="hud-block" id="title-block">
+      <h1 id="title">AETHER</h1>
+      <p id="subtitle">A living cosmic ecosystem</p>
+    </div>
+    <p class="hud-block" id="hint">
+      <b>Drag</b> to seed star clusters &nbsp;·&nbsp; <b>Move</b> to look &nbsp;·&nbsp; <b>Right-drag</b> / <b>Wheel</b> to orbit
+    </p>
+    <div class="hud-block" id="stats">
+      <div><span id="stat-fps">—</span> fps</div>
+      <div><span id="stat-count">—</span> stars</div>
+    </div>
+  </div>
+
+  <div id="fallback">
+    <div>
+      <h1>AETHER</h1>
+      <p>
+        This experience needs WebGL, which your browser or device does not appear to support.
+        Please open it in a recent version of Chrome, Edge, Firefox, or Safari with hardware
+        acceleration enabled.
+      </p>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
